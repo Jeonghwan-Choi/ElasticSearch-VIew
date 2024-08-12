@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elasticsearch Search Log</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
+        @font-face {
+            font-family: 'Pretendard-Regular';
+            src: url('https://fastly.jsdelivr.net/gh/Project-Noonnu/noonfonts_2107@1.1/Pretendard-Regular.woff') format('woff');
+            font-weight: 400;
+            font-style: normal;
+        }
+        pre {
+            white-space: pre-wrap; /* For wrapping long messages */
+            font-family: "JetBrains Mono", monospace;
+            font-optical-sizing: auto;
+            /* font-weight: <weight>; */
+            font-style: normal;
+        }
+
+        body {
+            font-family: 'Pretendard-Regular';
+            background-color: rgb(22, 22, 22);
+            color: rgb(219, 219, 219);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: rgb(22, 22, 22);
+            color: rgb(219, 219, 219);
+        }
+        th, td {
+            border-bottom: 1px solid #4b4b4b;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: rgb(33, 33, 33);
+            color: white;
+        }
+        pre {
+            white-space: pre-wrap; /* For wrapping long messages */
+        }
+        /* Search bar layout */
+        #searchForm {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        #searchForm label {
+            margin-right: 5px;
+            font-weight: bold;
+        }
+        #searchForm input[type="date"],
+        #searchForm input[type="time"],
+        select,
+        #searchForm input[type="text"],
+        #searchForm button {
+            flex-grow: 1;
+            padding: 8px;
+            font-size: 1rem;
+            background-color: rgb(33, 33, 33);
+            color: rgb(219, 219, 219);
+            border: 1px solid rgb(105, 105, 105);
+            border-radius: 5px;
+            font-family: 'Pretendard-Regular';
+        }
+        #searchForm input[type="date"],#searchForm input[type="time"] {
+            width: 0px;
+        }
+        select{
+            width: 0px;
+        }
+        /* #searchForm input[type="text"] {
+            
+        } */
+        #searchForm button {
+            flex-grow: 0;
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+
+        /* Pagination controls */
+        #paginationControls {
+            margin-top: 20px;
+            text-align: center;
+        }
+        #paginationControls button {
+            margin: 0 5px;
+            padding: 8px 16px;
+            font-size: 1rem;
+            background-color: rgb(33, 33, 33);
+            color: rgb(219, 219, 219);
+            border: 1px solid rgb(105, 105, 105);
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Elasticsearch Search Log</h1>    
+    <form id="searchForm">
+        <label for="endTime">Service Type:</label>
+        <select>
+            <option>product</option>
+            <option>homepage</option>
+        </select>
+        
+        <!-- <label for="startTime">Start Date/Time (KST):</label>
+        <input type="datetime-local" id="startTime" name="startTime" required>
+
+        <label for="endTime">End Date/Time (KST):</label>
+        <input type="datetime-local" id="endTime" name="endTime" required> -->
+
+        <label for="startDate">Start Date (KST):</label>
+        <input type="date" id="startDate" name="startDate" required>
+
+        <input type="time" id="startTime" name="startTime" step="1" required>
+
+        <label for="endDate">End Date (KST):</label>
+        <input type="date" id="endDate" name="endDate" required>
+
+        <input type="time" id="endTime" name="endTime" step="1" required>
+
+        
+
+        <label for="orderBy">Order By:</label>
+        <select id="orderBy">
+            <option>asc</option>
+            <option>desc</option>
+        </select>
+
+        <label for="message">Search Message:</label>
+        <input type="text" id="message" name="message" placeholder="Enter a message keyword">
+
+        <button type="submit">Search</button>
+    </form>
+
+    <h2>Search Results:</h2>
+    <table id="resultsTable">
+        <thead>
+            <tr>
+                <th>@timestamp (KST)</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Results will be inserted here -->
+        </tbody>
+    </table>
+
+    <div id="paginationControls">
+        <button id="prevPage">Previous</button>
+        <button id="nextPage">Next</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize current page
+            let currentPage = 0;
+            const resultsPerPage = 20;
+
+            // Get today's date in KST (Korean Standard Time)
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+
+            // Set default date values for start and end dates
+            document.getElementById('startDate').value = `${yyyy}-${mm}-${dd}`;
+            document.getElementById('endDate').value = `${yyyy}-${mm}-${dd}`;
+
+            // Set default time values for start and end times
+            document.getElementById('startTime').value = '00:00:00';
+            document.getElementById('endTime').value = '23:59:59';
+
+            // Combine date and time and convert to UTC
+            const combineDateTimeToUTC = (date, time) => {
+                const dateTime = new Date(`${date}T${time}+09:00`); // KST is UTC+9
+                dateTime.setHours(dateTime.getHours()); // Subtract 3 hours
+                return dateTime.toISOString();
+            };
+
+            // Function to execute the search query
+            const executeSearch = () => {
+                const startDate = document.getElementById('startDate').value;
+                const startTime = document.getElementById('startTime').value;
+                const endDate = document.getElementById('endDate').value;
+                const endTime = document.getElementById('endTime').value;
+
+                const orderBy = document.getElementById('orderBy').value;
+                console.log(orderBy);
+                
+
+                const startTimeUTC = combineDateTimeToUTC(startDate, startTime);
+                const endTimeUTC = combineDateTimeToUTC(endDate, endTime);
+
+                console.log("Start Time (UTC):", startTimeUTC);
+                console.log("End Time (UTC):", endTimeUTC);
+
+                const message = document.getElementById('message').value;
+
+                // Elasticsearch URL and index pattern
+                const esUrl = 'http://localhost:9200/logstash-*/_search';
+
+                // Create the query
+                const query = {
+                    from: currentPage * resultsPerPage,
+                    size: resultsPerPage,
+                    query: {
+                        bool: {
+                            must: [
+                                // {
+                                //     "match": {
+                                //         "message": message ? "Starting" : 
+                                //     }
+                                // },
+                                {
+                                    range: {
+                                        "@timestamp": {
+                                            "gte": startTimeUTC,
+                                            "lte": endTimeUTC
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    sort: [
+                        {
+                            "@timestamp": {
+                                "order": orderBy
+                            }
+                        }
+                    ],
+                    _source: ["message", "@timestamp", "host.name", "log.file.path"]
+                };
+
+                // If a message is provided, add it to the query
+                // if (message) {
+                //     query.query.bool = {
+                //         match: {
+                //             message: message
+                //         }
+                        
+                //     };
+                // }
+                if (message) {
+                    query.query.bool.must.push({
+                        match: {
+                            "message": message
+                        }
+                    });
+                }
+
+                // Send the POST request using Fetch API
+                fetch(esUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(query)
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const resultsTableBody = document.querySelector('#resultsTable tbody');
+                    resultsTableBody.innerHTML = ''; // Clear any previous results
+
+                    // Process the results
+                    data.hits.hits.forEach(hit => {
+                        // Convert the timestamp to Korean Standard Time (KST)
+                        const utcDate = new Date(hit._source['@timestamp']);
+                        const kstDate = new Date(utcDate.getTime() + 9 * 60 * 60 * 1000); // KST is UTC+9
+                        const formattedTimestamp = kstDate.toISOString().replace('T', ' ').replace('Z', '');
+
+                        // Create a table row
+                        const row = document.createElement('tr');
+                        let messageContent;
+                        if (Array.isArray(hit._source.message)) {
+                            // If it's an array, format the first element differently
+                            messageContent = `<pre>${hit._source.message[0]}</pre>`;
+                        } else {
+                            // If it's not an array, display it as is
+                            messageContent = `<pre>${hit._source.message}</pre>`;
+                        }
+
+                        row.innerHTML = `
+                            <td>${formattedTimestamp}</td>
+                            <td>${messageContent}</td>
+                        `;
+
+                        resultsTableBody.appendChild(row);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error executing search:', error);
+                    document.querySelector('#resultsTable tbody').innerHTML = '<tr><td colspan="3">Error executing search: ' + error + '</td></tr>';
+                });
+            };
+
+            // Handle form submission
+            document.getElementById('searchForm').addEventListener('submit', function(event) {
+                event.preventDefault();
+                currentPage = 0; // Reset to first page on new search
+                executeSearch();
+            });
+
+            // Handle pagination controls
+            document.getElementById('prevPage').addEventListener('click', function() {
+                if (currentPage > 0) {
+                    currentPage--;
+                    executeSearch();
+                }
+            });
+
+            document.getElementById('nextPage').addEventListener('click', function() {
+                currentPage++;
+                executeSearch();
+            });
+        });
+    </script>
+</body>
+</html>
